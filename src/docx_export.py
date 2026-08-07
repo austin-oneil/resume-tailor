@@ -1,0 +1,226 @@
+"""Converts the draft agent's markdown output into formatted, ATS-safe .docx
+files. Single column, standard font, no tables/text boxes/images — matching
+the ATS Formatting rules in resume_best_practices.md. Kept visually tight
+(small margins, minimal paragraph spacing) since the resume must fit one page.
+"""
+
+import re
+
+from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Pt
+
+BODY_FONT = "Calibri"
+BODY_SIZE = Pt(10.5)
+CONTACT_SIZE = Pt(9.5)
+NAME_SIZE = Pt(17)
+SECTION_SIZE = Pt(11.5)
+MARGIN = Inches(0.55)
+
+_LINK_RE = re.compile(r"\[(.+?)\]\((.+?)\)")
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_ITALIC_RE = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
+
+_DEFAULT_FMT = {"bold": False, "italic": False, "url": None}
+
+_SECTION_KEYWORDS = {
+    "summary", "core skills", "skills", "professional experience", "experience",
+    "education & certifications", "education and certifications", "education",
+}
+
+
+def _classify_line(line: str, is_first_nonblank: bool) -> str:
+    """Classifies a resume line as name/section/bullet/plain. Matches section
+    headers by their actual text (not just hash-count) so an occasional LLM
+    formatting slip on '##' vs '###' — or a missing '#' on the name — doesn't
+    silently break which lines get which font size."""
+    if is_first_nonblank:
+        return "name"
+    stripped = line.lstrip("#").strip().rstrip(":").lower()
+    if stripped in _SECTION_KEYWORDS:
+        return "section"
+    if line.lstrip().startswith(("- ", "* ")):
+        return "bullet"
+    return "plain"
+
+
+def _strip_prefix(line: str) -> str:
+    stripped = line.lstrip()
+    if stripped.startswith(("- ", "* ")):
+        return stripped[2:].strip()
+    return stripped.lstrip("#").strip()
+
+
+def _parse_italic(segment: str) -> list[tuple[str, dict]]:
+    runs = []
+    pos = 0
+    for m in _ITALIC_RE.finditer(segment):
+        if m.start() > pos:
+            runs.append((segment[pos:m.start()], dict(_DEFAULT_FMT)))
+        runs.append((m.group(1), {**_DEFAULT_FMT, "italic": True}))
+        pos = m.end()
+    if pos < len(segment):
+        runs.append((segment[pos:], dict(_DEFAULT_FMT)))
+    return runs
+
+
+def _parse_bold_italic(segment: str) -> list[tuple[str, dict]]:
+    runs = []
+    pos = 0
+    for m in _BOLD_RE.finditer(segment):
+        if m.start() > pos:
+            runs.extend(_parse_italic(segment[pos:m.start()]))
+        runs.append((m.group(1), {**_DEFAULT_FMT, "bold": True}))
+        pos = m.end()
+    if pos < len(segment):
+        runs.extend(_parse_italic(segment[pos:]))
+    return runs
+
+
+def parse_inline(text: str) -> list[tuple[str, dict]]:
+    """Splits a line into (text, {bold, italic, url}) runs based on markdown
+    [text](url) links, ** bold, and * italic markers."""
+    runs = []
+    pos = 0
+    for m in _LINK_RE.finditer(text):
+        if m.start() > pos:
+            runs.extend(_parse_bold_italic(text[pos:m.start()]))
+        runs.append((m.group(1), {**_DEFAULT_FMT, "url": m.group(2)}))
+        pos = m.end()
+    if pos < len(text):
+        runs.extend(_parse_bold_italic(text[pos:]))
+    return runs or [(text, dict(_DEFAULT_FMT))]
+
+
+def _set_base_style(doc: Document) -> None:
+    style = doc.styles["Normal"]
+    style.font.name = BODY_FONT
+    style.font.size = BODY_SIZE
+    style.paragraph_format.space_after = Pt(2)
+    style.paragraph_format.space_before = Pt(0)
+    style.paragraph_format.line_spacing = 1.0
+
+    section = doc.sections[0]
+    section.top_margin = MARGIN
+    section.bottom_margin = MARGIN
+    section.left_margin = MARGIN
+    section.right_margin = MARGIN
+
+
+def _add_hyperlink(paragraph, text: str, url: str, size=BODY_SIZE) -> None:
+    part = paragraph.part
+    r_id = part.relate_to(
+        url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", is_external=True
+    )
+
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+
+    run_el = OxmlElement("w:r")
+    rpr = OxmlElement("w:rPr")
+
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:ascii"), BODY_FONT)
+    rpr.append(rfonts)
+
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), str(int(size.pt * 2)))
+    rpr.append(sz)
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0563C1")
+    rpr.append(color)
+
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    rpr.append(underline)
+
+    run_el.append(rpr)
+    text_el = OxmlElement("w:t")
+    text_el.text = text
+    run_el.append(text_el)
+    hyperlink.append(run_el)
+    paragraph._p.append(hyperlink)
+
+
+def _add_runs(paragraph, runs: list[tuple[str, dict]], size=BODY_SIZE) -> None:
+    for text, fmt in runs:
+        if not text:
+            continue
+        if fmt.get("url"):
+            _add_hyperlink(paragraph, text, fmt["url"], size=size)
+            continue
+        run = paragraph.add_run(text)
+        run.bold = fmt["bold"]
+        run.italic = fmt["italic"]
+        run.font.name = BODY_FONT
+        run.font.size = size
+
+
+def build_resume_docx(markdown_text: str) -> Document:
+    doc = Document()
+    _set_base_style(doc)
+
+    # Counts down for the lines immediately after the name (the tagline and
+    # contact-info lines), which render smaller than body text.
+    header_lines_remaining = 0
+    seen_first_nonblank = False
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            continue
+
+        is_first = not seen_first_nonblank
+        seen_first_nonblank = True
+        kind = _classify_line(line, is_first)
+        content = _strip_prefix(line)
+
+        if kind == "name":
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(1)
+            run = p.add_run(content)
+            run.bold = True
+            run.font.name = BODY_FONT
+            run.font.size = NAME_SIZE
+            header_lines_remaining = 2
+        elif kind == "section":
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(8)
+            p.paragraph_format.space_after = Pt(2)
+            run = p.add_run(content.upper())
+            run.bold = True
+            run.font.name = BODY_FONT
+            run.font.size = SECTION_SIZE
+            header_lines_remaining = 0
+        elif kind == "bullet":
+            p = doc.add_paragraph(style="List Bullet")
+            p.paragraph_format.space_after = Pt(1)
+            _add_runs(p, parse_inline(content))
+            header_lines_remaining = 0
+        else:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(2)
+            size = CONTACT_SIZE if header_lines_remaining > 0 else BODY_SIZE
+            _add_runs(p, parse_inline(content), size=size)
+            header_lines_remaining = max(0, header_lines_remaining - 1)
+
+    return doc
+
+
+def build_cover_letter_docx(markdown_text: str) -> Document:
+    doc = Document()
+    _set_base_style(doc)
+    doc.styles["Normal"].paragraph_format.space_after = Pt(8)
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            continue
+        if line.strip().lower() in ("## cover letter", "cover letter"):
+            continue
+        p = doc.add_paragraph()
+        _add_runs(p, parse_inline(line.strip()))
+
+    return doc
