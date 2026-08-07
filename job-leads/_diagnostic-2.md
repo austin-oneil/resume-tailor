@@ -28,7 +28,7 @@ Tried `WebFetch` on two of the returned URLs (Apollo.io and Customer.io listings
 Confirmed with a direct `curl` (bypassing the WebFetch tool entirely) to rule out a tool-specific quirk:
 
 ```
-$ curl -sS -o /dev/null -w "HTTP_STATUS:%{http_code}\n" --max-time 15 "https://boards.greenhouse.io/apolloio/jobs/4381299004"
+$ curl -sS -o /dev/null -w "HTTP_STATUS:%{http_code}\n" --max-time 15 "https://boards.greenhouse.io/customerio/jobs/6025211"
 curl: (56) CONNECT tunnel failed, response 403
 HTTP_STATUS:000
 ```
@@ -40,5 +40,5 @@ Per the task's own instruction — apply the hiring-manager rubric only if a *wo
 ## Conclusion
 
 - WebSearch: **works**, 9/9 results returned cleanly.
-- WebFetch / direct HTTP to `boards.greenhouse.io`: **blocked** by the network egress proxy (403 on CONNECT tunnel), confirmed via both the WebFetch tool and raw `curl`.
+- WebFetch / direct HTTP to `boards.greenhouse.io`: **blocked** by the network egress proxy (403 on CONNECT tunnel), confirmed via both the WebFetch tool and raw `curl` on this run.
 - This means the diagnostic-1 finding (git push works) and this run's finding (WebSearch works, but greenhouse.io fetch does not) together isolate the actual gap: **outbound content-fetching to at least this job-board domain is not available in this environment**, independent of git/network-write access.
