@@ -1,7 +1,17 @@
 """Classifies a job posting into a role family.
 
-Cost-conscious two-tier approach: cheap keyword heuristic on the job title first,
-falling back to a single short Haiku tool-call only when the title is ambiguous.
+Cost-conscious two-tier approach: cheap keyword heuristic first, falling back
+to a single short Haiku tool-call only when the heuristic finds no signal at
+all. This label is now purely descriptive (used for output-folder naming and
+the applications log) — it no longer gates what evidence the drafting/scoring
+agents get to see (background_loader.build_subset always loads the full
+document). So there's no cost to leaning toward "hybrid": a title-only exact
+match used to hide real cross-discipline evidence from the model, which was
+the actual bug; now it just mislabels a folder. Scans the JD body as well as
+the title, not just the title, since a title alone regularly undersells how
+technical a "growth"/"marketing" role actually is (and vice versa) — real
+alignment can span categories, so this errs toward calling it hybrid rather
+than forcing a single stringent bucket.
 """
 
 import config
@@ -44,19 +54,28 @@ def classify_role_family(job_title: str, jd_text: str = "") -> str:
         if phrase in title_lower:
             return "hybrid"
 
-    has_dev = any(k in title_lower for k in DEV_KEYWORDS)
-    has_seo = any(k in title_lower for k in SEO_KEYWORDS)
-    has_sales = any(k in title_lower for k in SALES_KEYWORDS)
+    # Scan title + a body excerpt together, not the title alone — a title
+    # like "Senior Marketing Manager" reads as pure seo-growth on its own,
+    # but the body can easily be asking for hands-on dev/CMS-platform
+    # fluency. Checking both before deciding means a JD that genuinely
+    # blends categories gets called "hybrid" instead of being forced into
+    # whichever single bucket the title happened to hit first.
+    body_excerpt = " ".join(jd_text.split()[:400]).lower()
+    combined = f"{title_lower} {body_excerpt}"
+
+    has_dev = any(k in combined for k in DEV_KEYWORDS)
+    has_seo = any(k in combined for k in SEO_KEYWORDS)
+    has_sales = any(k in combined for k in SALES_KEYWORDS)
     matches = sum([has_dev, has_seo, has_sales])
 
+    if matches > 1:
+        return "hybrid"
     if matches == 1:
         if has_dev:
             return "dev"
         if has_seo:
             return "seo-growth"
         return "sales-technical"
-    if matches > 1:
-        return "hybrid"
 
     return _classify_with_haiku(job_title, jd_text)
 

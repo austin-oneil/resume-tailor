@@ -49,6 +49,7 @@ def run(
     background_subset: str,
     best_practices: str,
     draft: Draft,
+    role_family: str = "",
 ) -> HiringGateResult:
     hm_result = None
     lint_issues: list[dict] = []
@@ -88,10 +89,12 @@ def run(
         draft = draft_agent.revise(
             job_title, jd_text, background_subset, best_practices, draft, fixable_gaps + lint_issues, []
         )
-        length_result = length_fit.enforce_one_page(job_title, jd_text, background_subset, best_practices, draft)
+        length_result = length_fit.enforce_one_page(
+            job_title, jd_text, background_subset, best_practices, draft, role_family
+        )
         draft = length_result.draft
 
-        lint_issues = style_lint.lint_draft(draft) + structure_lint.lint_draft(draft, background_subset)
+        lint_issues = style_lint.lint_draft(draft) + structure_lint.lint_draft(draft, background_subset, role_family)
         if lint_issues:
             status_display.detail(
                 f"post-revision check: {len(lint_issues)} lint issue(s) introduced — feeding into next pass"

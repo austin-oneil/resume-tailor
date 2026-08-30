@@ -39,6 +39,16 @@ GAP_CONFESSION_PHRASES = [
     "where i'm still", "where i don't", "be direct about where",
     "areas i have", "haven't yet worked", "no concrete production",
     "aren't areas i", "transfers directly",
+    # Real, shipped error (2026-08-07, ZeroTier + earlier USA Home Listings
+    # letters): a third-person shape of the same confession — explaining WHY
+    # a past evaluator passed on the candidate, citing a specific
+    # quantifiable shortfall relative to other candidates. Root cause was a
+    # background.md Calibration Note explicitly recommending this framing
+    # for the Kharon anecdote (now fixed at the source too), but this stays
+    # as a backstop in case the pattern resurfaces from elsewhere.
+    "edged out", "didn't advance because", "did not advance because",
+    "other finalists had more", "other candidates had more",
+    "lost the final round", "lost out to candidates",
 ]
 
 # Hedged skill claims read differently from an outright admission but do the

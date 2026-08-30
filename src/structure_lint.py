@@ -52,6 +52,27 @@ _PROSPECTA_ONLY_CLIENTS = [
     "koch aesthetics", "gustafsen", "aspen ridge dental", "dennis wells",
     "kevin bass", "30a smiles",
 ]
+# The mirror of _PROSPECTA_ONLY_CLIENTS. Added 2026-08-22 after an audit found
+# Vocation Action Network's plugin work written into the PROSPECTA entry on 5
+# shipped resumes (Camber, Google, Hims&Hers, NeuroHire, SMX) — Hims&Hers named
+# VAN outright inside it. _check_employer_attribution only ever guarded the
+# Prospecta-client-under-Tangent direction; the reverse had no backstop at all
+# and shipped more often than the bug that prompted the original check.
+# Keep in sync with background.md's master employer-attribution Calibration Note.
+_TANGENT_ONLY_CLIENTS = [
+    "dnvr", "phnx", "all city media", "lacroix", "drill house",
+    "ahead of the curve", "aotc", "vocation action network", "regnum christi",
+    "honeycomb strategies",
+]
+# VAN's work is routinely described without naming it ("a client organization
+# with a membership base in the millions", "a prayer-logging system"), so the
+# name list alone misses most real occurrences. These phrases are unmistakably
+# VAN — no Prospecta dental client involves prayer-hour tracking or a
+# membership base in the millions.
+_TANGENT_WORK_MARKERS = [
+    "prayer", "membership base in the millions", "members in the millions",
+]
+_PROSPECTA_TITLE_OF_RECORD = "Senior SEO Specialist & Account Executive"
 _SECTION_HEADERS = ["Summary", "Core Skills", "Professional Experience", "Education & Certifications"]
 _BACKTICK_RE = re.compile(r"`[^`\n]+`")
 # Bullets phrased as a contrast against a hypothetical lesser version of
@@ -75,28 +96,46 @@ def _word_count(text: str) -> int:
     return len(text.split())
 
 
-def _check_prospecta_floor(resume: str) -> list[dict]:
+_SEO_FAMILY_ROLE_FAMILIES = {"seo-growth", "hybrid"}
+
+
+def _check_prospecta_floor(resume: str, role_family: str = "") -> list[dict]:
     """Presence floor only, not position. Ordering used to be enforced by
     only checking bullets[:3] (per Calibration Note 362's original 'SEO and
     AE bullets must lead' rule), but across 9 independent hiring-manager
     reviews on dev-family JDs, 0 objected to missing SEO/AE presence while 9
     objected to the engineering narrative being buried under SEO framing.
     Note 362 was revised to require presence without dictating position for
-    dev-family JDs — check the whole entry, not just the top."""
+    dev-family JDs — check the whole entry, not just the top.
+
+    The Account Executive bullet floor applies on every JD. The SEO/
+    technical-SEO bullet floor is scoped (narrowed 2026-08-19 per candidate
+    instruction): required only when role_family is 'seo-growth' or
+    'hybrid'. On a genuinely software-engineering-family JD, the entry's own
+    title line ('Senior SEO Specialist & Account Executive') already
+    discloses the role's real nature, so an all-technical entry is the
+    stronger, correct read for that screen — not a gap. role_family defaults
+    to '' (unknown) for any caller that hasn't been threaded through yet;
+    treat unknown the same as a non-SEO-family JD so the floor only
+    tightens, never silently loosens, when a caller is missing the wire-up."""
     issues = []
+    require_seo = role_family in _SEO_FAMILY_ROLE_FAMILIES
     m = re.search(r"\*\*Prospecta Marketing\*\*(.*?)(?=\n\*\*[A-Z]|\Z)", resume, re.DOTALL)
     if not m:
         return issues  # not this role family's resume, or a structural miss caught elsewhere
     block = m.group(1)
     bullets = [b for b in block.splitlines() if b.strip().startswith(("- ", "* "))]
     if len(bullets) < 3:
+        detail = (
+            "Prospecta entry has only {} bullet(s); the per-employer floor requires "
+            "at least one real {}bullet somewhere in the entry (not necessarily first)."
+        ).format(
+            len(bullets),
+            "SEO bullet and one real Account Executive/client " if require_seo else "Account Executive/client ",
+        )
         issues.append({
             "category": "Structure - Prospecta Floor",
-            "detail": (
-                f"Prospecta entry has only {len(bullets)} bullet(s); the per-employer "
-                "floor requires at least one real SEO bullet and one real Account "
-                "Executive/client bullet somewhere in the entry (not necessarily first)."
-            ),
+            "detail": detail,
             # A hard, non-negotiable floor per background.md's Calibration
             # Notes, not a soft style preference — critical tier, same as
             # other non-negotiable-floor/integrity checks (audit v3 §3
@@ -106,7 +145,7 @@ def _check_prospecta_floor(resume: str) -> list[dict]:
         return issues
     has_seo = any(_SEO_VOCAB_RE.search(b) for b in bullets)
     has_account = any(_ACCOUNT_VOCAB_RE.search(b) for b in bullets)
-    if not has_seo:
+    if require_seo and not has_seo:
         issues.append({
             "category": "Structure - Prospecta Floor",
             "detail": "No SEO/technical-SEO bullet found anywhere in the Prospecta entry.",
@@ -150,6 +189,190 @@ def _check_employer_attribution(resume: str) -> list[dict]:
         # Misstates which company real work was performed for — critical
         # tier, not merely "high" alongside cosmetic tells (audit v3 §3
         # Mechanism 2).
+        "severity": "critical",
+    }]
+
+
+def _prospecta_block(resume: str) -> str:
+    """The Prospecta entry body, from its bolded company line to the next
+    bolded company line or section heading. Shared by the attribution mirror
+    and the title-of-record check."""
+    m = re.search(r"\*\*Prospecta Marketing\*\*(.*?)(?=\n\*\*[A-Z]|\n### |\Z)", resume, re.DOTALL)
+    return m.group(1) if m else ""
+
+
+def _check_reverse_employer_attribution(resume: str) -> list[dict]:
+    """Mirror of _check_employer_attribution. A Tangent Apps freelance client's
+    work appearing inside the Prospecta entry claims freelance work as W2
+    employer work — the same integrity problem as the original bug, in the
+    other direction, and empirically the more common one."""
+    block = _prospecta_block(resume)
+    if not block:
+        return []
+    lowered = block.lower()
+    found = [n for n in _TANGENT_ONLY_CLIENTS if n in lowered]
+    markers = [p for p in _TANGENT_WORK_MARKERS if p in lowered]
+    if not found and not markers:
+        return []
+    named = ", ".join(found) if found else "(not named, but identified by its work)"
+    return [{
+        "category": "Integrity - Employer Attribution (reverse)",
+        "detail": (
+            f"Tangent Apps freelance client work found inside the PROSPECTA MARKETING "
+            f"entry. Client(s): {named}."
+            + (f" Identifying phrase(s): {', '.join(markers)}." if markers else "")
+            + " These are Tangent Apps freelance engagements, not Prospecta Marketing "
+            "work. Presenting freelance work as work done for the W2 employer "
+            "misrepresents which company it was performed for — an integrity problem, "
+            "not a formatting one. Move this content into the Tangent Apps umbrella "
+            "entry (or drop it if this JD doesn't need it), never leave it under "
+            "Prospecta."
+        ),
+        "severity": "critical",
+    }]
+
+
+def _check_title_of_record(resume: str) -> list[dict]:
+    """Austin's hard integrity boundary: the Prospecta title line must carry the
+    title actually on employer record. Added 2026-08-22 after an audit found it
+    crossed on 3 shipped resumes — waymark shipped 'Software Engineer
+    (Full-Stack & Internal Tooling)' in the title slot with the real title
+    demoted to a subordinate line, and comma-ai/neurohire shipped 'Senior SEO
+    Specialist & Web Developer'. The score agent and the hiring-manager gate
+    both passed all three, and waymark's own tailoring notes claimed the rule
+    had been followed. Prompt-only enforcement of this rule demonstrably fails.
+
+    The separate '*Scope: ...*' line remains allowed — it is self-description
+    of real work, not a claim about the title, and is checked here only to the
+    extent that it must not replace the title of record."""
+    m = re.search(r"\*\*Prospecta Marketing\*\*([^\n]*)\n([^\n]*)", resume)
+    if not m:
+        return []
+    company_rest, next_line = m.group(1).strip(), m.group(2).strip()
+    # Locate the TITLE SLOT precisely. Merely containing the real title
+    # somewhere in the entry is not enough: the exact defect this check exists
+    # to catch (waymark) put an engineering title in the slot and demoted the
+    # real one to a subordinate '*Official title on record: ...*' line, which
+    # a substring search over both lines happily accepts.
+    if company_rest:
+        title_slot = company_rest          # malformed one-line header
+    elif re.match(r"\*(scope|official title)", next_line, re.IGNORECASE):
+        title_slot = ""                    # slot skipped entirely
+    else:
+        title_slot = next_line
+    if _PROSPECTA_TITLE_OF_RECORD.lower() in title_slot.lower():
+        return []
+    title_line = title_slot or next_line
+    return [{
+        "category": "Integrity - Title of Record",
+        "detail": (
+            f"The Prospecta entry's title line does not carry the title of record. "
+            f"Found: {title_line.strip()!r}. It must read exactly "
+            f"'{_PROSPECTA_TITLE_OF_RECORD}' (dates may follow after ' | '). This is a "
+            "hard integrity boundary: the title on employer record is the only title "
+            "that may occupy the title slot. Real technical scope belongs on a separate "
+            "'*Scope: ...*' line beneath it, never substituted into the title itself."
+        ),
+        "severity": "critical",
+    }]
+
+
+_ENTRY_TITLE_RE = re.compile(r"^\*(?!Scope:).+\|.+\*$")
+
+
+def _check_experience_entry_format(resume: str) -> list[dict]:
+    """Every Professional Experience entry header must be two lines: a bolded
+    company line alone, then an italicized 'Title | Dates' line. Added
+    2026-08-22 — an audit of 34 shipped resumes found EIGHT distinct formats
+    for this one header, because the prompt mandated an em dash separator 45
+    lines above the rule banning em dashes. Three resumes fused employer and
+    title with no separator at all, which collapses the two fields an ATS
+    writes into its structured employer/title records."""
+    m = re.search(r"### Professional Experience\n(.*?)(?=\n### |\Z)", resume, re.DOTALL)
+    if not m:
+        return []
+    issues = []
+    lines = m.group(1).splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("**"):
+            continue
+        # A Tangent-style bullet leads with a bolded client name but starts
+        # with a list marker — not an entry header.
+        if line.lstrip().startswith(("- ", "* ")):
+            continue
+        if not re.fullmatch(r"\*\*[^*]+\*\*", stripped):
+            issues.append({
+                "category": "Structure - Experience Entry Format",
+                "detail": (
+                    f"Experience entry header line has content beyond the bolded company "
+                    f"name: {stripped!r}. Line 1 must be the company name alone in bold. "
+                    "Put the title and dates on line 2 as '*Title | Mon YYYY - Mon YYYY*'."
+                ),
+                "severity": "high",
+            })
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if not _ENTRY_TITLE_RE.fullmatch(nxt):
+            issues.append({
+                "category": "Structure - Experience Entry Format",
+                "detail": (
+                    f"The line after company header {stripped!r} is not a valid title line. "
+                    f"Found: {nxt!r}. It must be italicized 'Title | Dates', e.g. "
+                    "'*Senior SEO Specialist & Account Executive | Feb 2024 - Present*'. "
+                    "A ' | ' separator is required so an ATS can split employer from title."
+                ),
+                "severity": "high",
+            })
+    return issues
+
+
+# Process/methodology claims are the highest-risk fabrication class in this
+# document set: JDs name them constantly (sprints, Jira, standups, CI/CD), they
+# sound like table stakes rather than achievements, and unlike a technology
+# claim they leave no artifact behind, so the model reaches for them to mirror
+# JD language without noticing it is asserting something. Real, shipped example
+# (2026-08-22 Waymark run): Core Skills carried "Agile collaboration with
+# cross-functional teams" while background.md contained no occurrence of agile,
+# scrum, sprint, standup, Jira, or kanban anywhere. Both the Sonnet integrity
+# pass and the hiring-manager gate passed it.
+#
+# Deliberately checked against the background subset rather than hardcoded as a
+# ban: if Austin later does sprint-based team work and adds it to background.md,
+# this check stops firing on its own with no code change needed.
+_METHODOLOGY_CLAIM_RE = re.compile(
+    r"\b(agile|scrum|kanban|sprint planning|sprints?|stand-?ups?|jira|"
+    r"ci/cd|continuous integration|continuous deployment|pair programming|"
+    r"test-driven development|tdd)\b",
+    re.IGNORECASE,
+)
+
+
+def _check_unsupported_methodology_claims(text: str, background_subset: str, label: str) -> list[dict]:
+    """Every process/methodology term in the draft must appear somewhere in the
+    background document. Absence there means the candidate has no stated
+    experience with it, so asserting it is a fabrication regardless of how
+    generic or low-stakes the term sounds."""
+    if not background_subset:
+        return []
+    bg = background_subset.lower()
+    unsupported = sorted({
+        m.group(0) for m in _METHODOLOGY_CLAIM_RE.finditer(text)
+        if m.group(0).lower() not in bg
+    })
+    if not unsupported:
+        return []
+    return [{
+        "category": "Integrity - Unsupported Methodology Claim",
+        "detail": (
+            f"{label} claims process/methodology experience with no support anywhere in "
+            f"the background document: {', '.join(unsupported)}. These terms appear in the "
+            "JD, not in the candidate's history — mirroring the JD's process vocabulary "
+            "without backing is a fabricated claim, even though it sounds like table "
+            "stakes rather than an achievement. Remove the term. If the JD emphasizes a "
+            "process the candidate hasn't formally practiced, say nothing about it and "
+            "lead with real collaboration evidence instead (never volunteer the gap)."
+        ),
         "severity": "critical",
     }]
 
@@ -389,11 +612,16 @@ def _check_resume_length_precheck(resume: str) -> list[dict]:
     return []
 
 
-def lint_draft(draft, background_subset: str = "") -> list[dict]:
+def lint_draft(draft, background_subset: str = "", role_family: str = "") -> list[dict]:
     """draft is a src.draft_agent.Draft (resume + cover_letter)."""
     issues: list[dict] = []
-    issues += _check_prospecta_floor(draft.resume)
+    issues += _check_prospecta_floor(draft.resume, role_family)
     issues += _check_employer_attribution(draft.resume)
+    issues += _check_reverse_employer_attribution(draft.resume)
+    issues += _check_title_of_record(draft.resume)
+    issues += _check_experience_entry_format(draft.resume)
+    issues += _check_unsupported_methodology_claims(draft.resume, background_subset, "Resume")
+    issues += _check_unsupported_methodology_claims(draft.cover_letter, background_subset, "Cover letter")
     issues += _check_degree_line_editorializing(draft.resume)
     issues += _check_stale_credentials(draft.resume, background_subset)
     issues += _check_no_backticks(draft.resume, "Resume")

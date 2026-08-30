@@ -45,13 +45,16 @@ SCORE_TOOL = {
                                 "surfaced, a house-style violation, a stale fact). "
                                 "jd_coverage = the JD asks for experience that genuinely "
                                 "does not appear anywhere in the candidate background "
-                                "material provided below (note: you only receive a "
-                                "role-family-filtered subset of the full background doc, "
-                                "not the whole thing — 'not in what I was given' is the "
-                                "honest claim, not 'the candidate doesn't have this'). A "
-                                "jd_coverage gap is INFORMATIONAL ONLY — it reports a real "
-                                "limitation to the candidate, it is not a defect in the "
-                                "draft and no rewrite can close it."
+                                "material provided below — you receive the candidate's "
+                                "full background document, not a filtered excerpt, so an "
+                                "absence here is a genuine claim about the candidate, not "
+                                "just about what you were given. Double-check by rereading "
+                                "the background document before calling something a gap: "
+                                "it's long, and the relevant evidence may be phrased "
+                                "differently than the JD's wording rather than genuinely "
+                                "absent. A jd_coverage gap is INFORMATIONAL ONLY — it "
+                                "reports a real limitation to the candidate, it is not a "
+                                "defect in the draft and no rewrite can close it."
                             ),
                         },
                     },
@@ -134,12 +137,18 @@ SYSTEM_INSTRUCTIONS = (
     "preference. It's fine for its tech stack to appear in Core Skills or for "
     "it to appear as a clearly-labeled interview anecdote in the cover letter.\n"
     "NON-NEGOTIABLE, always check regardless of JD: if the Calibration Notes "
-    "specify a per-employer minimum (e.g. Prospecta must show at least one real "
-    "SEO bullet AND at least one real Account Executive bullet, ahead of the "
-    "dev bullets), verify the draft actually has them — not just skill-list "
-    "mentions, but real bullets describing that work. If either is missing or "
-    "reduced to zero bullets, add a 'high' severity gap explicitly calling out "
-    "which discipline is missing.\n"
+    "specify a per-employer minimum, verify the draft actually has it — not "
+    "just skill-list mentions, but a real bullet describing that work. "
+    "Prospecta's Account Executive bullet floor applies on every JD, "
+    "regardless of role family. Prospecta's SEO/technical-SEO bullet floor "
+    "applies ONLY when this specific JD is itself SEO/growth/marketing/"
+    "sales/hybrid-family — judge that from the job title and JD text you were "
+    "given, not from the candidate's background. For a genuinely "
+    "software-engineering-family JD with no marketing scope, an all-technical "
+    "Prospecta entry is correct and the SEO bullet is NOT required; do not "
+    "flag its absence as a gap in that case. If a floor that DOES apply to "
+    "this JD is missing or reduced to zero bullets, add a 'high' severity gap "
+    "explicitly calling out which discipline is missing.\n"
     "Be strict — a score of 85+ should mean a genuinely strong, accurate, ATS-ready "
     "match with no unresolved integrity flags.\n"
     "Classify every gap as 'draft_defect' or 'jd_coverage'. Be honest about the split: "
@@ -202,21 +211,46 @@ def score(
         f"Cover letter draft:\n{draft.cover_letter}\n\n"
         "Score this draft and report gaps and integrity flags."
     )
-    message = client.messages.create(
-        model=model,
-        max_tokens=2000,
-        system=system,
-        tools=[SCORE_TOOL],
-        tool_choice={"type": "tool", "name": "submit_score"},
-        messages=[{"role": "user", "content": user_message}],
-    )
-    print_cache_usage("score", message.usage)
-    for block in message.content:
-        if block.type == "tool_use":
-            return ScoreResult(
-                score=block.input["score"],
-                strengths=as_str_list(block.input.get("strengths", [])),
-                gaps=as_dict_list(block.input.get("gaps", [])),
-                integrity_flags=as_dict_list(block.input.get("integrity_flags", [])),
-            )
-    raise RuntimeError("Score agent did not return a tool_use block")
+    # The API doesn't hard-enforce a tool schema's "required" list — the model
+    # occasionally drops a field (observed live: a whole "score" key missing
+    # from an otherwise well-formed tool_use block). One retry, same pattern
+    # as hiring_manager's degenerate-response retry, catches this without
+    # masking a real second failure.
+    for attempt in range(1, 3):
+        message = client.messages.create(
+            model=model,
+            max_tokens=3000,
+            system=system,
+            tools=[SCORE_TOOL],
+            tool_choice={"type": "tool", "name": "submit_score"},
+            messages=[{"role": "user", "content": user_message}],
+        )
+        print_cache_usage("score", message.usage)
+        if message.stop_reason == "max_tokens":
+            print("    [score] WARNING: response truncated at max_tokens — output may be incomplete")
+
+        raw_score = None
+        block_found = False
+        for block in message.content:
+            if block.type == "tool_use":
+                block_found = True
+                raw_score = block.input.get("score")
+                if isinstance(raw_score, (int, float)):
+                    return ScoreResult(
+                        score=int(raw_score),
+                        strengths=as_str_list(block.input.get("strengths", [])),
+                        gaps=as_dict_list(block.input.get("gaps", [])),
+                        integrity_flags=as_dict_list(block.input.get("integrity_flags", [])),
+                    )
+                break
+
+        if attempt == 2:
+            if block_found:
+                raise RuntimeError(
+                    f"Score agent's tool_use block had no usable 'score' field after 2 attempts (got {raw_score!r})"
+                )
+            raise RuntimeError("Score agent did not return a tool_use block after 2 attempts")
+        print(
+            f"    [score] {'missing/invalid score field' if block_found else 'no tool_use block'}, "
+            "retrying once..."
+        )

@@ -8,88 +8,62 @@ actionable left to fix has been observed to make drafts worse, not better, so
 the loop also stops early once no fixable issue remains rather than grinding
 to MAX_ITERATIONS on a JD-coverage gap no rewrite can close."""
 
-import re
 from dataclasses import dataclass
 
 import config
 from src import draft_agent, score_agent, status as status_display, structure_lint, style_lint
+from src.client import find_technology_matches
 from src.draft_agent import Draft
 from src.score_agent import ScoreResult
 
 
-def _lint(draft: Draft, background_subset: str) -> list[dict]:
-    return style_lint.lint_draft(draft) + structure_lint.lint_draft(draft, background_subset)
-
-
-# Sentence-initial and common capitalized words that would otherwise
-# pollute the capitalized-token extraction below (e.g. the "No" in "No
-# experience with...", or "Candidate"/"Demonstrated" starting a sentence).
-_CAPITALIZED_STOPWORDS = {
-    "no", "not", "none", "nor", "the", "this", "that", "these", "those", "a", "an",
-    "candidate", "candidates", "demonstrated", "demonstrable", "background",
-    "experience", "experienced", "missing", "lacks", "lacking", "limited", "required",
-    "preferred", "basic", "qualifications", "role", "position", "job", "jd",
-    # Real, shipped false positive (2026-08-07, Trivelta re-run): "JD" (the
-    # abbreviation itself) and sentence-generic words matched as if they were
-    # real technical terms, producing a meaningless "high severity" flag
-    # citing "these terms (JD, Nothing) do appear". Both were 2-letter/
-    # sentence-initial noise, not signal.
-    "nothing", "something", "everything", "anything", "someone", "everyone",
-    "anyone", "here", "there", "while", "given", "note", "check",
-}
-# Proper-noun/technology-name-shaped tokens: a capitalized word, or an
-# all-caps acronym, of 2+ characters. Score-agent gap descriptions reliably
-# capitalize technology/skill names ("AWS Lambda", "SQL", "Tableau") while
-# generic connective words in the same sentence stay lowercase — this is a
-# much stronger signal than matching any lowercase word, which false-
-# positived twice during testing (see below).
-_PROPER_NOUN_RE = re.compile(r"\b[A-Z][A-Za-z0-9+.#]{1,}\b")
+def _lint(draft: Draft, background_subset: str, role_family: str = "") -> list[dict]:
+    return style_lint.lint_draft(draft) + structure_lint.lint_draft(draft, background_subset, role_family)
 
 
 def jd_coverage_backstop(gaps: list[dict]) -> list[dict]:
-    """Deterministic check, no API call (audit v3 §2.4). score_agent only
-    ever receives background_subset — a role-family-filtered slice of
-    background.md (background_loader.build_subset()) — but presents a
-    jd_coverage classification to Austin as "the candidate genuinely does
-    not have this," which asserts knowledge of the full document the agent
-    was never given. For an seo-growth classification, for example, the
-    entire DEV section is absent from what the agent saw; real experience
-    living only in DEV can get misclassified jd_coverage, silently dropped
-    from revision, and reported as a genuine career limitation.
+    """Deterministic check, no API call (audit v3 §2.4).
+
+    Originally written to catch a role-family subset-filtering bug:
+    background_loader.build_subset() used to hand score_agent only a
+    role-family slice of background.md, so a jd_coverage classification
+    ("the candidate genuinely does not have this") could really just mean
+    "not in the slice I was given," misreported as a genuine career
+    limitation. That filtering was removed 2026-08-08 — score_agent now
+    always receives the full background document — so this backstop's
+    original premise no longer applies to every run. It's kept for a
+    narrower, still-real failure mode: the document is long, and the score
+    agent can still overlook or misjudge evidence that IS in front of it.
 
     Cross-checks each jd_coverage gap's capitalized/technology-shaped terms
-    against the FULL background.md — deliberately NOT a generic lowercase
-    word match: an earlier version matched on any 4+ letter lowercase word
-    and false-positived twice in testing ("never"/"scale"/"used" against a
-    Kubernetes gap; "data"/"demonstrated" against a SQL/Tableau/Looker gap),
-    both filler words with zero actual signal. Real gap descriptions reliably
-    capitalize the actual technology/skill name, so that's the signal to key
-    on. Surfaced as its own meta-issue rather than silently reclassified to
-    draft_defect — a heuristic token match is good enough to flag "check
-    this by hand," not good enough to unilaterally decide the gap is fixable
-    and feed it back into a revision pass."""
-    full_background = config.BACKGROUND_PATH.read_text().lower()
+    against the FULL background.md via find_technology_matches, which
+    matches on word boundaries (not substring containment — an earlier bug
+    let 2-letter acronyms like "ML"/"CS" false-positive by matching inside
+    unrelated words like "html"/"css"; fixed 2026-08-09). Real gap
+    descriptions reliably capitalize the actual technology/skill name, so
+    that's the signal to key on. Surfaced as its own meta-issue rather than
+    silently reclassified to draft_defect — a heuristic token match is good
+    enough to flag "check this by hand," not good enough to unilaterally
+    decide the gap is fixable and feed it back into a revision pass."""
+    full_background = config.BACKGROUND_PATH.read_text()
     meta_issues = []
     for gap in gaps:
         if gap.get("kind") != "jd_coverage":
             continue
         detail = gap.get("detail", "")
-        candidates = {
-            t for t in _PROPER_NOUN_RE.findall(detail)
-            if t.lower() not in _CAPITALIZED_STOPWORDS
-        }
-        matches = sorted({t for t in candidates if t.lower() in full_background}, key=str.lower)
+        matches = find_technology_matches(detail, full_background)
         if matches:
             meta_issues.append({
-                "category": "jd_coverage_subset_mismatch",
+                "category": "jd_coverage_possible_oversight",
                 "detail": (
                     f"Score agent classified this as a gap the candidate genuinely "
-                    f"lacks: \"{detail}\" — but it only ever saw a role-family-filtered "
-                    f"subset of background.md, not the full document, and these terms "
-                    f"({', '.join(matches[:5])}) do appear somewhere in the full file. "
-                    "The loaded role-family subset may be wrong for this JD, or this "
-                    "may be a genuine coincidental word overlap — check background.md "
-                    "directly before treating this as a real capability gap."
+                    f"lacks: \"{detail}\" — but these terms ({', '.join(matches[:5])}) "
+                    "do appear somewhere in background.md, which the score agent "
+                    "receives in full. This may be a real gap phrased using a term "
+                    "that coincidentally also appears elsewhere for an unrelated "
+                    "reason, or the score agent may have overlooked genuine evidence "
+                    "in a long document — check background.md directly before "
+                    "treating this as a real capability gap."
                 ),
                 "severity": "high",
                 "kind": "draft_defect",
@@ -173,6 +147,7 @@ def run(
     company_name: str = "",
     seniority_band: str = "",
     known_missing: list[str] | None = None,
+    role_family: str = "",
 ) -> SupervisorResult:
     status_display.substep(f"Generating initial draft for '{job_title}'...")
     draft = draft_agent.generate(
@@ -183,7 +158,7 @@ def run(
 
     status_display.substep("Scoring draft...")
     result = score_agent.score(job_title, jd_text, background_subset, best_practices, draft)
-    lint_issues = _lint(draft, background_subset)
+    lint_issues = _lint(draft, background_subset, role_family)
     iteration = 1
     history: list[dict] = []
     _record(history, iteration, result, lint_issues)
@@ -221,7 +196,7 @@ def run(
         )
         tailoring_notes += [f"[iteration {iteration + 1}] {note}" for note in draft.tailoring_notes]
         result = score_agent.score(job_title, jd_text, background_subset, best_practices, draft)
-        lint_issues = _lint(draft, background_subset)
+        lint_issues = _lint(draft, background_subset, role_family)
         iteration += 1
         _record(history, iteration, result, lint_issues)
         status_display.detail(
@@ -241,13 +216,13 @@ def run(
             f"iteration {iteration} (score={result.score}), which scored worse"
         )
 
-    subset_mismatch_issues = jd_coverage_backstop(best_result.gaps)
-    if subset_mismatch_issues:
+    possible_oversight_issues = jd_coverage_backstop(best_result.gaps)
+    if possible_oversight_issues:
         status_display.detail(
-            f"{len(subset_mismatch_issues)} jd_coverage gap(s) may be a role-family "
-            "subset issue, not a real limitation — flagged for review"
+            f"{len(possible_oversight_issues)} jd_coverage gap(s) may be a scoring "
+            "oversight, not a real limitation — flagged for review"
         )
-        best_result.gaps = best_result.gaps + subset_mismatch_issues
+        best_result.gaps = best_result.gaps + possible_oversight_issues
 
     # Reconciled with main.py's blocking_style_issues rule (audit v3 §3
     # Mechanism 3 note): low severity is advisory, not blocking, everywhere

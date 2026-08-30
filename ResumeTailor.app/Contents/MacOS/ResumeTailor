@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Launcher for the Resume Tailor desktop GUI. This .app bundle is just a
+# thin wrapper around the project's own venv + gui_app.py — no packaging or
+# freezing, so editing the Python source under resume-tailor/ takes effect
+# immediately, the same as running ./start does for the CLI.
+set -e
+PROJECT_DIR="/Users/austinroneil/resume-tailor"
+cd "$PROJECT_DIR"
+mkdir -p logs
+exec "$PROJECT_DIR/.venv/bin/python3" "$PROJECT_DIR/gui_app.py" >> "$PROJECT_DIR/logs/gui.log" 2>&1

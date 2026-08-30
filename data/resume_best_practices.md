@@ -33,6 +33,19 @@ this file is loaded as-is and cached alongside the background doc.
   4," write "Google Analytics 4 (GA4)" rather than "GA4" alone. Literal-match screening
   still runs before any semantic layer in most ATS stacks. This extends the acronym
   rule above in both directions.
+- **Clearance, citizenship, and work-authorization requirements must be answered
+  explicitly, never left to inference.** When a JD states a citizenship requirement, a
+  security clearance requirement, or that it will not sponsor work authorization, state
+  the candidate's true status on the resume. A reviewer who cannot find the answer to a
+  stated non-negotiable assumes the unfavorable one — and for this candidate the true
+  answer is favorable and was simply going unsaid (real shipped miss, 2026-08-22 SMX
+  run, which a simulated hiring manager rejected partly on this). See the Work
+  Authorization surfacing rule in background.md for the exact permitted phrasing and its
+  hard boundary: eligibility may be stated, a clearance that is not held may never be
+  claimed or implied as active or in process. **Conversely, do not volunteer this on a
+  posting that doesn't ask.** A routine background-check line is not a clearance
+  requirement; work-authorization text on an ordinary commercial req is off-key filler
+  eating a line of a one-page resume (real over-fire, 2026-08-23 Runpod run).
 - **Never list a technology with no supporting evidence anywhere in the background
   doc**, even if it appears in the candidate background's tech-stack inventory section.
   A skills-list entry the candidate can't defend in a technical screen is worth less
@@ -77,7 +90,18 @@ rather than defaulting to a generic resume template.
    comma-separated paragraphs, not bullets (e.g. `**Technical SEO:** ...`,
    `**Software Engineering:** ...`, `**Cloud Infrastructure and Tools:** ...`).
    Choose categories and contents based on what's in the background doc and what the
-   JD emphasizes — don't force an irrelevant category in. Apply a quality bar: leave
+   JD emphasizes — don't force an irrelevant category in.
+   **Order by JD relevance, and cut what the JD doesn't ask for (added 2026-08-22 from
+   recruiter guidance Austin surfaced).** A recruiter gives the page roughly 20 seconds;
+   a skills block padded with technologies irrelevant to this posting buries the
+   relevant ones and can actively cost the application rather than adding optional
+   upside. So: the first category, and the first few terms inside it, must be the stack
+   this JD actually names. Anything the JD doesn't ask for and that no bullet on the
+   page demonstrates should be dropped, not demoted — a term that is neither
+   JD-relevant nor evidenced is pure noise. (Real example: a shipped resume listed
+   MongoDB with no supporting bullet anywhere and no mention in the JD.) This is a
+   sharper rule than the quality bar below, which is about commodity-vs-differentiating
+   skills; this one is about relevance to *this specific posting*. Apply a quality bar: leave
    out basic/commodity setup tasks that don't show real range or depth (e.g. "Let's
    Encrypt/Certbot TLS" is entry-level website-setup busywork, not a differentiating
    skill, even though it's true) in favor of skills that actually demonstrate scope.
@@ -124,16 +148,39 @@ rather than defaulting to a generic resume template.
    discipline that defines the role — dropping a whole discipline to zero bullets is
    not valid tailoring. Weight bullet count toward whichever discipline the JD favors,
    but never zero; check Calibration Notes for employer-specific minimums (e.g.
-   Prospecta requires both a real SEO bullet and a real Account Executive bullet
-   somewhere in the entry — check the same note for role-family-dependent ordering,
-   since position is not universal even though presence is) and treat the presence
-   requirement as a hard floor. Each entry: **company name**
-   in bold on its own line, then *title – dates* in italics on the next line (company
-   leads, not title). On engineering-family JDs where the official title doesn't say
+   Prospecta requires a real Account Executive bullet somewhere in the entry on every
+   JD, and a real SEO bullet too, but only on SEO/growth/marketing/sales/hybrid-family
+   JDs — a genuinely software-engineering-family JD does not need the SEO bullet, since
+   the entry's own title line already discloses the role's real nature; check the same
+   note for role-family-dependent ordering, since position is not universal even where
+   presence is) and treat whichever floor applies as hard.
+
+   **Entry header format (REVISED 2026-08-22 — the one-line em-dash format previously
+   specified here contradicted the "never use an em dash" rule in the AI-tells section
+   below, and an audit of 34 shipped resumes found EIGHT different header formats as a
+   result, three of which fused employer and title into one unparseable string):** each
+   entry header is exactly TWO lines —
+
+   ```
+   **Prospecta Marketing**
+   *Senior SEO Specialist & Account Executive | Feb 2024 - Present*
+   ```
+
+   Line 1 is the company name alone in bold. Line 2 is the title, a ` | ` separator, and
+   the date range, in italics. Dates are `Mon YYYY - Mon YYYY` or `Mon YYYY - Present`,
+   with spaces around the hyphen. The line break and the pipe are what let an ATS split
+   employer from title into its separate structured fields — the title field is what
+   recruiters actually filter on, so a fused header can cost the application before a
+   human sees it. Never put the title on line 1, never merge the lines, never use an em
+   dash. Enforced deterministically by `structure_lint._check_experience_entry_format`.
+
+   On engineering-family JDs where the official title doesn't say
    "engineer" or "developer," an additional italicized `*Scope: ...*` line naming the
-   real technical scope is permitted directly beneath the title line when Calibration
-   Notes allow it for that employer — self-description backed by real documented work,
-   never a change to the title itself. Then 3-6 bullets. Lead bullets with the most JD-relevant, most
+   real technical scope is permitted directly beneath the title line when
+   Calibration Notes allow it for that employer — self-description backed by real
+   documented work, never a change to the title itself. The title of record must still
+   occupy the title line; a Scope line may never displace it (enforced by
+   `structure_lint._check_title_of_record`). Then 3-6 bullets. Lead bullets with the most JD-relevant, most
    quantified achievements; bold the single standout quantified clause in the lead
    entry's top bullet only (sparingly — once, not on every bullet). For a
    freelance/contract umbrella entry (e.g. Tangent Apps) covering multiple clients,
@@ -141,13 +188,19 @@ rather than defaulting to a generic resume template.
    `**Ahead of the Curve Media (2023):** ...`.
 5. **Education & Certifications** — include whenever the background doc has an
    `EDUCATION` section: degree/institution on one line, certifications
-   comma-separated on the next. **Degree line format (revised per 2026-08-06 v2
-   audit):** `B.S. Computer Science — Western Governors University, 2026` — the bare
-   completion year only, never a month. 7 of 9 independent reviewers misread a
-   month-precision recent-degree date as still in progress (one even read "March
-   2026" as a future date in an August 2026 run) — this is a resume-legibility
-   problem, not a reviewer error, and a bare year is the standard convention that
-   avoids it. **In-progress certifications** (e.g. "AWS Solutions Architect –
+   comma-separated on the next. **Degree line format (REVISED 2026-08-19; this file
+   still carried the superseded 2026-08-06 rule until 2026-08-22):**
+   `B.S. Computer Science, Western Governors University (Completed February 2026)` —
+   state the exact month AND the word "Completed". The earlier rule here said bare
+   year, never a month; that was based on an untested hypothesis and made the problem
+   WORSE. A bare year is genuinely ambiguous about whether that year's graduation month
+   has already passed, even to a reviewer who knows today's date — the 2026-08-19
+   Roboflow review still read the bare-year version as "a future date... suggests
+   candidate is still finishing formal CS education." Dropping the month didn't remove
+   the ambiguity, it removed the one fact that resolves it. The word "Completed" plus
+   the real month is what closes it. (Austin's degree was conferred **Feb 23, 2026** per
+   official transcript — use February, not March; background.md carried the wrong month
+   until 2026-08-22.) **In-progress certifications** (e.g. "AWS Solutions Architect –
    Associate (in progress)") are included on junior and mid-band JDs, where they
    read as active trajectory, and **omitted entirely on senior/lead-band JDs**,
    where an unearned cert next to a recent degree has drawn an explicit
@@ -177,6 +230,24 @@ Budget the top third of the page accordingly:
   actual, recurring hiring-manager objection. Keep in-progress items in the Education &
   Certifications section at the bottom, where they read as ongoing investment rather
   than as a gap.
+- **The first bullet of EVERY entry is prime real estate, not just the lead entry's.**
+  Recruiters scan the top of each section and each entry rather than reading linearly,
+  and ATS ranking weights keywords found in the summary and in the first bullet under
+  each job title more heavily than the same keyword lower down. So every entry gets its
+  most JD-relevant bullet first, not just the first entry on the page.
+- **When the employer-of-record title is non-technical, get technical proof above it.**
+  Guidance for career-changers converges on this: if the reader's first encounter with
+  your history is a job title from the field you're leaving, they decide "not a fit"
+  before reaching the evidence, and everything after that is read as confirmation. This
+  candidate hits that problem on every engineering-family JD — the title of record is
+  "Senior SEO Specialist & Account Executive" and cannot be changed (hard integrity
+  boundary). The mitigations available here, in order of leverage: (1) the tagline
+  carries the JD's own role title; (2) the Summary's first clause leads with concrete
+  systems shipped, never with a title or a duty; (3) the lead entry's first bullet is
+  the strongest production-engineering artifact available. Those three elements are the
+  entire top third — used together they put real engineering evidence in front of the
+  reader before the title line, which is the only lever this format has against the
+  early-exit problem. Treat all three as load-bearing on engineering JDs, not stylistic.
 - Name the hiring company at least once in the cover letter, and once more in a
   sentence that could only have been written for this specific posting (a phrase from
   the posting's own description of its problem, product, or mission). A letter that
@@ -230,6 +301,18 @@ Budget the top third of the page accordingly:
   in daily production use, still maintained). All four of these are real, sizeable facts
   when the background doc actually states them — don't let a bullet read as an
   unverifiable adjective when a real count or adoption fact is available instead.
+- **Density target: most bullets should carry a sizing fact.** General resume guidance
+  aims for a metric in 60-70% of bullets, and bullets with a number measurably outdraw
+  bullets without one. That target is adopted here with one hard modification: it is a
+  target for *sizing facts*, not for percentages and dollar figures specifically, and it
+  NEVER licenses inventing a number (see the rule above — that prohibition is absolute
+  and outranks this target). Most bullets in this candidate's material can be sized
+  truthfully using the four non-metric types listed directly above: count affected,
+  parties coordinated, duration/deadline, or adoption fact. Before leaving a bullet
+  unsized, check whether the background doc supplies one of those four. Leaving it
+  unsized is still correct when it doesn't — an honest unquantified bullet beats a
+  fabricated metric every time — but an unsized bullet should be the exception you
+  checked for, not the default you defaulted into.
 - **Version numbers do not count as quantification.** "React 18," "Express 4," "React
   Router v6" are ATS keyword tokens, not impact — don't let them occupy the slot where a
   scale number belongs, and don't mistake listing them for having quantified the bullet.

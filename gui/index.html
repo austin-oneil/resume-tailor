@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resume Tailor</title>
+<style>
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --panel-alt: #f0f1f4;
+  --border: #dde0e6;
+  --text: #1a1d23;
+  --text-dim: #5b606b;
+  --text-faint: #8b8f99;
+  --accent: #3454d1;
+  --accent-text: #ffffff;
+  --accent-soft: #e8ecfb;
+  --good: #1a8a4a;
+  --good-bg: #e5f6ec;
+  --warn: #b4790a;
+  --warn-bg: #fbf0dc;
+  --bad: #c23b3b;
+  --bad-bg: #fbe8e8;
+  --mono: "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --panel: #1e2127;
+    --panel-alt: #22252c;
+    --border: #33373f;
+    --text: #e8e9ec;
+    --text-dim: #a7abb5;
+    --text-faint: #6b6f78;
+    --accent: #6d87f4;
+    --accent-text: #10131a;
+    --accent-soft: #262b3d;
+    --good: #4ad486;
+    --good-bg: #16301f;
+    --warn: #e0a840;
+    --warn-bg: #362a10;
+    --bad: #ef6a6a;
+    --bad-bg: #3a1c1c;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  height: 100vh;
+  overflow: hidden;
+}
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+header {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: 0.2px; }
+header .sub { font-size: 12px; color: var(--text-faint); }
+
+main { flex: 1; overflow: hidden; position: relative; }
+.view {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 24px 28px 40px;
+  display: none;
+}
+.view.active { display: block; }
+
+/* ---- Intake ---- */
+.field { margin-bottom: 16px; max-width: 720px; }
+.field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+input[type=text], textarea, select {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+}
+input[type=text]:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+textarea { min-height: 260px; resize: vertical; font-family: var(--mono); line-height: 1.45; }
+.hint { font-size: 11.5px; color: var(--text-faint); margin-top: 5px; }
+
+button {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.primary:hover { filter: brightness(1.07); }
+button.secondary { background: var(--panel-alt); color: var(--text); border-color: var(--border); }
+button.secondary:hover { background: var(--border); }
+button.warn { background: var(--warn); color: #1a1300; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+#error-banner {
+  display: none;
+  max-width: 720px;
+  background: var(--bad-bg);
+  color: var(--bad);
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  padding: 10px 13px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+/* ---- Activity ---- */
+.progress-track {
+  display: flex;
+  gap: 4px;
+  max-width: 640px;
+  margin-bottom: 18px;
+}
+.progress-track .seg {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+}
+.progress-track .seg.done { background: var(--accent); }
+.progress-track .seg.current { background: var(--accent); opacity: 0.55; }
+#stage-label { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+
+#log {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  max-width: 900px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#log .stage-line { color: var(--accent); font-weight: 700; margin-top: 10px; }
+#log .stage-line:first-child { margin-top: 0; }
+#log .substep-line { color: var(--text); }
+#log .detail-line { color: var(--text-dim); padding-left: 14px; }
+#log .classified-line { color: var(--text-faint); font-style: italic; }
+
+.card {
+  max-width: 720px;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-top: 16px;
+  border: 1px solid var(--border);
+}
+.card.warn { border-color: var(--warn); background: var(--warn-bg); }
+.card.bad { border-color: var(--bad); background: var(--bad-bg); }
+.card h3 { margin: 0 0 8px; font-size: 14px; }
+.card ul { margin: 6px 0; padding-left: 20px; }
+.card .actions { margin-top: 14px; display: flex; gap: 10px; }
+.tag-bad { color: var(--bad); font-weight: 700; }
+
+/* ---- Result ---- */
+.result-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 900px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.badge {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+.badge.accepted { background: var(--good-bg); color: var(--good); }
+.badge.accepted_structurally_capped { background: var(--accent-soft); color: var(--accent); }
+.badge.manual_review { background: var(--warn-bg); color: var(--warn); }
+
+.stat-row { display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 18px; }
+.stat { min-width: 90px; }
+.stat .n { font-size: 22px; font-weight: 700; }
+.stat .l { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.4px; }
+
+.file-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
+.file-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.file-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.report {
+  max-width: 900px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 28px 28px;
+}
+.report h1 { font-size: 19px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.report h2 { font-size: 15.5px; margin-top: 26px; color: var(--accent); }
+.report h3 { font-size: 13.5px; margin-top: 18px; color: var(--text-dim); }
+.report p { line-height: 1.6; font-size: 13px; }
+.report ul { line-height: 1.65; font-size: 13px; padding-left: 22px; }
+.report strong { color: var(--text); }
+.table-wrap { overflow-x: auto; }
+.report table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 10px 0; }
+.report th, .report td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+.report th { background: var(--panel-alt); }
+
+#result-top-actions { display: flex; justify-content: flex-end; max-width: 900px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Resume Tailor</h1>
+    <span class="sub">tailored resume &amp; cover letter pipeline</span>
+  </header>
+  <main>
+
+    <section id="view-intake" class="view active">
+      <div id="error-banner"></div>
+      <div class="field">
+        <label for="f-title">Job title</label>
+        <input type="text" id="f-title" placeholder="e.g. Senior Frontend Engineer">
+      </div>
+      <div class="field">
+        <label for="f-platform">Applying via</label>
+        <input type="text" id="f-platform" list="platform-options" placeholder="Indeed, LinkedIn, Built In, Handshake...">
+        <datalist id="platform-options">
+          <option value="Indeed"><option value="LinkedIn"><option value="Built In">
+          <option value="Handshake"><option value="Referral"><option value="Company Website">
+          <option value="Other">
+        </datalist>
+      </div>
+      <div class="field">
+        <label for="f-desc">Job description</label>
+        <textarea id="f-desc" placeholder="Paste the full job description here..."></textarea>
+        <div class="hint">Everything from "Who we are" through the requirements — the more complete, the better the tailoring.</div>
+      </div>
+      <button class="primary" id="submit-btn" onclick="submitForm()">Start Tailoring</button>
+    </section>
+
+    <section id="view-activity" class="view">
+      <div class="progress-track" id="progress-track"></div>
+      <div id="stage-label">Starting...</div>
+      <div id="log"></div>
+      <div id="inline-cards"></div>
+    </section>
+
+    <section id="view-result" class="view">
+      <div id="result-top-actions">
+        <button class="secondary" onclick="resetToIntake()">Start New Application</button>
+      </div>
+      <div class="result-top">
+        <span id="result-badge" class="badge"></span>
+        <div class="file-row" id="file-row"></div>
+      </div>
+      <div class="stat-row" id="stat-row"></div>
+      <div class="report" id="report-body"></div>
+    </section>
+
+  </main>
+</div>
+<script>
+const TOTAL_STAGES = 6;
+let currentStage = 0;
+
+function el(id) { return document.getElementById(id); }
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  el('view-' + name).classList.add('active');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function submitForm() {
+  const title = el('f-title').value.trim();
+  const platform = el('f-platform').value.trim();
+  const description = el('f-desc').value.trim();
+  el('error-banner').style.display = 'none';
+  if (!title || !description) {
+    el('error-banner').textContent = 'Job title and description are both required.';
+    el('error-banner').style.display = 'block';
+    return;
+  }
+  el('log').innerHTML = '';
+  el('inline-cards').innerHTML = '';
+  currentStage = 0;
+  renderProgress();
+  el('stage-label').textContent = 'Starting...';
+  showView('activity');
+  window.pywebview.api.submit_job(title, platform, description);
+}
+
+function resetToIntake() {
+  showView('intake');
+}
+
+function renderProgress() {
+  const track = el('progress-track');
+  track.innerHTML = '';
+  for (let i = 1; i <= TOTAL_STAGES; i++) {
+    const seg = document.createElement('div');
+    seg.className = 'seg' + (i < currentStage ? ' done' : i === currentStage ? ' current' : '');
+    track.appendChild(seg);
+  }
+}
+
+function appendLog(cls, text) {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = text;
+  el('log').appendChild(line);
+  el('log').scrollTop = el('log').scrollHeight;
+}
+
+function clearCards() {
+  el('inline-cards').innerHTML = '';
+}
+
+function showGateConfirm(f) {
+  const card = document.createElement('div');
+  card.className = 'card warn';
+  let html = `<h3>Weak fit and/or red flags detected</h3>`;
+  html += `<div>Estimated match on required qualifications: <strong>${f.match_estimate}%</strong></div>`;
+  if (f.disqualifying_requirements && f.disqualifying_requirements.length) {
+    html += `<div style="margin-top:8px;" class="tag-bad">Disqualifying requirement(s) — no draft, however well written, closes these:</div>`;
+    html += `<ul>${f.disqualifying_requirements.map(r => `<li class="tag-bad">${escapeHtml(r)}</li>`).join('')}</ul>`;
+  }
+  if (f.missing_requirements && f.missing_requirements.length) {
+    html += `<div style="margin-top:8px;">Missing requirements:</div>`;
+    html += `<ul>${f.missing_requirements.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+  }
+  if (f.red_flags && f.red_flags.length) {
+    html += `<div style="margin-top:8px;">Red flags:</div>`;
+    html += `<ul>${f.red_flags.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+  }
+  html += `<div class="actions">
+    <button class="secondary" onclick="confirmContinue(false, this)">Cancel</button>
+    <button class="warn" onclick="confirmContinue(true, this)">Continue Anyway</button>
+  </div>`;
+  card.innerHTML = html;
+  el('inline-cards').appendChild(card);
+}
+
+function confirmContinue(proceed, btn) {
+  const card = btn.closest('.card');
+  card.querySelectorAll('button').forEach(b => b.disabled = true);
+  window.pywebview.api.confirm_continue(proceed);
+  if (!proceed) {
+    appendLog('detail-line', 'Skipped — no draft generated.');
+  }
+}
+
+function showCancelled() {
+  clearCards();
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<h3>Skipped</h3><div>No draft was generated.</div>
+    <div class="actions"><button class="primary" onclick="resetToIntake()">Start New Application</button></div>`;
+  el('inline-cards').appendChild(card);
+}
+
+function showError(f) {
+  clearCards();
+  const card = document.createElement('div');
+  card.className = 'card bad';
+  card.innerHTML = `<h3>Something went wrong</h3><div>${escapeHtml(f.message || 'Unknown error')}</div>
+    <div class="actions"><button class="primary" onclick="resetToIntake()">Start New Application</button></div>`;
+  el('inline-cards').appendChild(card);
+}
+
+/* ---- tiny markdown renderer, tailored to src/report.py's output ---- */
+function inlineMd(s) {
+  s = escapeHtml(s);
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return s;
+}
+function renderMarkdown(md) {
+  const lines = md.split('\n');
+  let html = '', para = [], list = [], table = [];
+  function flushPara() { if (para.length) { html += `<p>${para.join(' ')}</p>`; para = []; } }
+  function flushList() { if (list.length) { html += `<ul>${list.join('')}</ul>`; list = []; } }
+  function flushTable() {
+    if (table.length) {
+      const header = table[0], rows = table.slice(1);
+      html += '<div class="table-wrap"><table><thead><tr>' +
+        header.map(c => `<th>${inlineMd(c)}</th>`).join('') + '</tr></thead><tbody>' +
+        rows.map(r => '<tr>' + r.map(c => `<td>${inlineMd(c)}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table></div>';
+      table = [];
+    }
+  }
+  let inTable = false;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    const trimmed = line.trim();
+    if (/^\|.*\|$/.test(trimmed)) {
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue;
+      flushPara(); flushList();
+      table.push(cells);
+      inTable = true;
+      continue;
+    } else if (inTable) { flushTable(); inTable = false; }
+
+    if (trimmed === '') { flushPara(); flushList(); continue; }
+    let m;
+    if ((m = /^###\s+(.*)$/.exec(trimmed))) { flushPara(); flushList(); html += `<h3>${inlineMd(m[1])}</h3>`; continue; }
+    if ((m = /^##\s+(.*)$/.exec(trimmed))) { flushPara(); flushList(); html += `<h2>${inlineMd(m[1])}</h2>`; continue; }
+    if ((m = /^#\s+(.*)$/.exec(trimmed))) { flushPara(); flushList(); html += `<h1>${inlineMd(m[1])}</h1>`; continue; }
+    if ((m = /^-\s+(.*)$/.exec(trimmed))) { flushPara(); list.push(`<li>${inlineMd(m[1])}</li>`); continue; }
+    flushList();
+    para.push(inlineMd(trimmed));
+  }
+  flushPara(); flushList(); flushTable();
+  return html;
+}
+
+const STATUS_LABELS = {
+  accepted: 'PASSED',
+  accepted_structurally_capped: 'PASSED — capped by a real fact, not a draft defect',
+  manual_review: 'NEEDS MANUAL REVIEW',
+};
+
+function makeFileButton(label, path, action) {
+  const btn = document.createElement('button');
+  btn.className = 'file-btn';
+  btn.textContent = label;
+  btn.addEventListener('click', () => window.pywebview.api[action](path));
+  return btn;
+}
+
+function showResult(f) {
+  const badge = el('result-badge');
+  badge.className = 'badge ' + f.final_status;
+  badge.textContent = STATUS_LABELS[f.final_status] || f.final_status;
+
+  el('stat-row').innerHTML = `
+    <div class="stat"><div class="n">${f.score}/100</div><div class="l">Score</div></div>
+    <div class="stat"><div class="n">${f.pages}</div><div class="l">Pages</div></div>
+    <div class="stat"><div class="n">${escapeHtml(f.hm_verdict)}</div><div class="l">Hiring Manager</div></div>
+  `;
+
+  const fileRow = el('file-row');
+  fileRow.innerHTML = '';
+  if (f.resume_docx) fileRow.appendChild(makeFileButton('Resume.docx', f.resume_docx, 'open_path'));
+  if (f.cover_letter_docx) fileRow.appendChild(makeFileButton('Cover Letter.docx', f.cover_letter_docx, 'open_path'));
+  if (f.report_path) fileRow.appendChild(makeFileButton('Report.md', f.report_path, 'open_path'));
+  if (f.folder) fileRow.appendChild(makeFileButton('Show in Finder', f.folder, 'reveal_path'));
+
+  el('report-body').innerHTML = renderMarkdown(f.report_markdown || '');
+  showView('result');
+}
+
+function onPipelineEvent(kind, f) {
+  switch (kind) {
+    case 'classified':
+      appendLog('classified-line', `Classified as: ${f.role_family}`);
+      break;
+    case 'stage':
+      currentStage = f.number;
+      renderProgress();
+      el('stage-label').textContent = `Stage ${f.number}/${f.total}: ${f.title}  [${f.model}]`;
+      appendLog('stage-line', `STAGE ${f.number}/${f.total}: ${f.title}`);
+      break;
+    case 'substep':
+      appendLog('substep-line', f.text);
+      break;
+    case 'detail':
+      appendLog('detail-line', f.text);
+      break;
+    case 'done':
+      break;
+    case 'gate_confirm':
+      showGateConfirm(f);
+      break;
+    case 'cancelled':
+      showCancelled();
+      break;
+    case 'error':
+      showError(f);
+      break;
+    case 'result':
+      showResult(f);
+      break;
+  }
+}
+</script>
+</body>
+</html>

@@ -76,7 +76,14 @@ Generated: {timestamp}
 ## Outcome
 
 - **Status:** {final_status}
-- **Final score:** {score_result.score}/100 (acceptance threshold: 85)
+- **Final score:** {score_result.score}/100 (acceptance threshold: 85) — scored by the
+  stronger final-verification model on the shipped document. This is a DIFFERENT
+  measurement from the Score Progression table at the bottom of this report, which
+  uses the cheaper in-loop model on earlier drafts; the two are not comparable and
+  the table is not expected to end at this number. Treat this score as roughly
+  +/-5: re-scoring one unchanged document five times produced 83, 85, 88, 88, 85,
+  so a run landing just under 85 is often a draw of the dice rather than a verdict
+  on the writing.
 - **Iterations:** {supervisor_result.iterations} (shipped iteration {supervisor_result.shipped_iteration} of {supervisor_result.iterations}{" — a later iteration scored worse and was discarded" if supervisor_result.shipped_iteration != supervisor_result.iterations else ""})
 - **Resume length:** {length_result.page_count} page(s) {"(fits)" if length_result.fits_one_page else "(still over one page after shortening attempts)"}
 - **Hiring manager verdict:** {hm_result.verdict} (after {hiring_gate_result.attempts} review(s))
@@ -153,6 +160,13 @@ the resume looks the way it does, not just *what* it says.
 {_bullet_list(all_tailoring_notes)}
 
 ## Score Progression
+
+In-loop scores from the cheap draft/revise model, one row per supervisor iteration.
+These are a DIFFERENT model scoring DIFFERENT (earlier) drafts than the "Final score"
+in the Outcome section above, which is measured by the stronger model on the shipped
+document after length-fitting, hiring-manager revision, and repair. The last row here
+is not expected to equal the final score, and a drop between rows does not mean the
+shipped document got worse.
 
 | Iteration | Score | Gaps | Integrity Flags | Style Issues |
 |---|---|---|---|---|
